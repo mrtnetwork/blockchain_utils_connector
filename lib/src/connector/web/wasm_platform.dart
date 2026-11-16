@@ -13,6 +13,20 @@ JSUint8Array _toJs(BuBytes data) =>
     Uint8List.fromList(List<int>.from(data)).toJS;
 BuBytes _fromJs(JSUint8Array arr) => BuBytes(arr.toDart);
 
+/// Normalizes [url] into a valid dynamic-`import()` module specifier:
+/// absolute URLs and `blob:`/`data:` URLs pass through, root-absolute and
+/// `./`/`../`-relative paths pass through, and anything else (e.g. the
+/// default `wasm_assets/bu.js`) is made `./`-relative so it resolves
+/// against the page base URL — exactly like `<script src>` did.
+String _importSpecifier(String url) {
+  final u = url.trim();
+  if (u.startsWith(RegExp('^[a-zA-Z][a-zA-Z0-9+.-]*:'))) return u;
+  if (u.startsWith('/') || u.startsWith('./') || u.startsWith('../')) {
+    return u;
+  }
+  return './$u';
+}
+
 void _copyInto(BuBytes out, BuBytes src) {
   final n = out.length < src.length ? out.length : src.length;
   for (var i = 0; i < n; i++) {
@@ -111,9 +125,12 @@ class WasmPlatformBindings implements BuPlatformBindings {
       // Dynamic ES-module import (works with or without a DOM). Requires
       // `--target web` glue: a `--target no-modules` classic script has no
       // exports, so it imports to an empty namespace — detected below.
+      // Note: unlike `<script src>`, a bare `wasm_assets/bu.js` specifier is
+      // invalid for `import()` — it must be `./`-relative, root-absolute,
+      // or a full URL.
       final JSObject ns;
       try {
-        ns = await importModule(glue.toJS).toDart.timeout(
+        ns = await importModule(_importSpecifier(glue).toJS).toDart.timeout(
           remaining(),
           onTimeout: () => throw TimeoutException('import $glue timed out.'),
         );
