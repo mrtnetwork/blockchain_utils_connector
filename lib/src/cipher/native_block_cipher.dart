@@ -74,8 +74,11 @@ class BuNativeAes implements BuBlockCipher, SecretState {
     if (_cleaned) return;
     _cleaned = true;
     _finalizer.detach(this);
-    _b.aesFree(_handle);
-    _key.zero();
+    try {
+      _b.aesFree(_handle);
+    } finally {
+      _key.zero();
+    }
   }
 
   /// Alias of [clean] for the [SecretState] disposal contract.

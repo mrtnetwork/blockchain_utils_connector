@@ -26,6 +26,31 @@ class _HashFinalizerToken {
   }
 }
 
+/// Token freeing a saved snapshot ([BuNativeHash.saveState]) when it is
+/// GC'd without [BuNativeHash.cleanSavedState]. Owns only the bindings, the
+/// snapshot handle, and the live-set it unregisters from — never the owner
+/// (holding the owner would pin it and the finalizer would never fire).
+class _HashStateToken {
+  _HashStateToken(this.bindings, this.state, this.live);
+
+  final BuPlatformBindings bindings;
+  final Object state;
+  final Set<Object> live;
+
+  void free() {
+    // Whoever unregisters first wins the right to free: exactly one path
+    // (explicit free, parent clean, or this callback) ever frees a handle.
+    if (!live.remove(state)) {
+      return;
+    }
+    try {
+      bindings.hashFreeState(state);
+    } catch (_) {
+      // Best-effort: already freed explicitly.
+    }
+  }
+}
+
 /// Native hash context: streaming `update` / `finish` over a Rust (FFI) or
 /// wasm-bindgen (web) allocation.
 ///
@@ -48,6 +73,12 @@ class BuNativeHash implements BuSerializableHash, SecretState {
   /// Safety net: `hashClean + hashFree` when GC'd without [clean].
   static final Finalizer<_HashFinalizerToken> _finalizer = Finalizer(
     (token) => token.clean(),
+  );
+
+  /// Safety net: `hashFreeState` for snapshots GC'd without
+  /// [cleanSavedState].
+  static final Finalizer<_HashStateToken> _stateFinalizer = Finalizer(
+    (token) => token.free(),
   );
 
   static BuResult<BuNativeHash> create(
@@ -76,6 +107,11 @@ class BuNativeHash implements BuSerializableHash, SecretState {
   final int _blockSize;
   final int _algo;
   bool _cleaned = false;
+
+  /// Snapshot handles minted by [saveState] and not yet freed. Guards
+  /// [restoreState]/[cleanSavedState] (and the state [Finalizer]) against
+  /// double-free and use-after-free: exactly one path ever frees a handle.
+  final Set<Object> _liveStates = {};
 
   void _ensure() {
     if (_cleaned) {
@@ -129,7 +165,8 @@ class BuNativeHash implements BuSerializableHash, SecretState {
   }
 
   /// Releases the native allocation. Idempotent; detaches the [Finalizer]
-  /// so GC never double-frees.
+  /// so GC never double-frees. Also frees outstanding snapshots minted by
+  /// [saveState] (restoring them afterwards throws [BuError.invalidState]).
   @override
   void clean() {
     if (_cleaned) {
@@ -137,29 +174,62 @@ class BuNativeHash implements BuSerializableHash, SecretState {
     }
     _cleaned = true;
     _finalizer.detach(this);
-    _b.hashClean(_handle);
-    _b.hashFree(_handle);
+    try {
+      _b.hashClean(_handle);
+    } finally {
+      _b.hashFree(_handle);
+      // Drain snapshots: unregistered here, so their still-attached state
+      // finalizers become no-ops when they fire later (see _HashStateToken).
+      for (final s in _liveStates.toList()) {
+        _liveStates.remove(s);
+        try {
+          _b.hashFreeState(s);
+        } catch (_) {
+          // Best-effort: already freed explicitly.
+        }
+      }
+    }
   }
 
   /// Alias of [clean] for the [SecretState] disposal contract.
   @override
   void dispose() => clean();
 
+  /// Snapshots the current state. The snapshot belongs to this context:
+  /// restoring it after [clean]/[cleanSavedState] throws
+  /// [BuError.invalidState] instead of touching freed native memory.
   @override
   BuHashState saveState() {
     _ensure();
-    return BuHashState(_b.hashSaveState(_handle));
+    final saved = BuHashState(_b.hashSaveState(_handle));
+    _liveStates.add(saved.handle);
+    _stateFinalizer.attach(
+      saved,
+      _HashStateToken(_b, saved.handle, _liveStates),
+      detach: saved,
+    );
+    return saved;
   }
 
+  /// Restores a snapshot minted by [saveState] on this context.
   @override
   BuSerializableHash restoreState(BuHashState saved) {
     _ensure();
+    if (!_liveStates.contains(saved.handle)) {
+      throw BuError.invalidState;
+    }
     _b.hashRestoreState(_handle, saved.handle);
     return this;
   }
 
+  /// Releases a snapshot. Idempotent; detaches the state [Finalizer] so GC
+  /// never double-frees.
   @override
   void cleanSavedState(BuHashState saved) {
+    if (!_liveStates.remove(saved.handle)) {
+      return;
+    }
+    _stateFinalizer.detach(saved);
     _b.hashFreeState(saved.handle);
   }
 }

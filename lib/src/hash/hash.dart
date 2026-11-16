@@ -20,7 +20,3 @@ abstract class BuSerializableHash<STATE extends BuHashState> extends BuHash {
   BuSerializableHash restoreState(STATE saved);
   void cleanSavedState(STATE saved);
 }
-
-// typedef BuSerializableHash = SerializableHash;
-// typedef BuHash = Hash;
-// typedef CbHashFunc = SerializableHash Function();

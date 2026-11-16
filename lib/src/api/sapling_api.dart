@@ -33,13 +33,17 @@ abstract interface class BuSaplingApi {
   /// Output public inputs size (5×32 LE limbs: cv_u,cv_v,epk_u,epk_v,cm_u).
   static const int outputInputsLen = 160;
 
-  /// Load Spend ceremony parameters. Caller must [paramsFree] the handle.
+  /// Load Spend ceremony parameters. The returned handle belongs to this
+  /// instance: pass it to [prove]/[verify] here and release it with
+  /// [paramsFree] (idempotent). Forgetting [paramsFree] still frees natively
+  /// on GC (best-effort); use after free surfaces as [BuError].
   BuResult<Object> setSpendParams({required List<int> params});
 
-  /// Load Output ceremony parameters. Caller must [paramsFree] the handle.
+  /// Load Output ceremony parameters. Same ownership contract as
+  /// [setSpendParams].
   BuResult<Object> setOutputParams({required List<int> params});
 
-  /// Release a params handle.
+  /// Release a params handle. Idempotent: safe to call twice.
   void paramsFree(Object handle);
 
   /// Prove under [handle]. Returns 192-byte proof + 7/5×32 public inputs.
