@@ -143,9 +143,9 @@ class Bu {
     return Bu._(openPlatformBindings(config));
   }
 
-  /// Loads the WASM module described by [config] (web only: injects the
-  /// glue script and awaits bootstrap). Await before [init] when the page
-  /// did not preload the glue via `<script>` tags. Throws [UnsupportedError]
+  /// Loads the WASM module described by [config] (web only: imports the
+  /// glue module and awaits bootstrap). Await before [init] when the page
+  /// did not pre-import the glue. Throws [UnsupportedError]
   /// on native targets.
   static Future<void> ensureWasmLoaded([BuConfig config = const BuConfig()]) {
     return ensurePlatformWasmLoaded(config);

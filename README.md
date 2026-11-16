@@ -105,7 +105,7 @@ dart tool/build_backends.dart --all
 ```
 
 - `--ffi` cargo-builds the shared library used by VM tests.
-- `--wasm` builds the WASM module + `wasm-bindgen --target no-modules`
+- `--wasm` builds the WASM module + `wasm-bindgen --target web` glue
   glue into `test/wasm_assets/` (`bu.js` + `bu_bg.wasm`).
 - `--force` rebuilds WASM assets even when they already exist.
 

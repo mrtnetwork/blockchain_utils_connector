@@ -246,9 +246,9 @@ String defaultWasmOutDir() => '${_packageRoot()}/test/wasm_assets';
 const wasmBuildFeatures =
     'wasm,std,groth16,poseidon-bn254,zcash-full,monero,hw,solana-zk';
 
-/// Builds the WASM module + wasm-bindgen `--target no-modules` glue into
-/// [outDir] (`bu.js`, `bu_bg.wasm`, `.d.ts`). `bu_shim.js` (hand-written
-/// bootstrap honoring `window.__bu_wasm_url`) is never overwritten.
+/// Builds the WASM module + wasm-bindgen `--target web` glue into
+/// [outDir] (`bu.js`, `bu_bg.wasm`, `.d.ts`). The glue is a real ES module
+/// loaded with [importModule] by the connector — no companion files needed.
 /// The Rust crate is downloaded from [kOfficialRustRepo] first when the
 /// checkout is missing and [cloneIfMissing] is true.
 Future<void> ensureWasmAssets({
@@ -286,7 +286,7 @@ Future<void> ensureWasmAssets({
   await out.create(recursive: true);
   await _run('wasm-bindgen', [
     '--target',
-    'no-modules',
+    'web',
     '--out-dir',
     out.path,
     '--out-name',

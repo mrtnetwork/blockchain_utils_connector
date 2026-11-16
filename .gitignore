@@ -1,2 +1,6 @@
 # Managed Rust checkout + cargo build outputs (see tool/build_backends.dart).
 build/
+# Built WASM backend outputs (rebuilt by `tool/build_backends.dart --wasm`).
+test/wasm_assets/bu.js
+test/wasm_assets/bu_bg.wasm
+test/wasm_assets/*.d.ts

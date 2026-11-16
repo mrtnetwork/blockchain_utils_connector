@@ -6,9 +6,10 @@ BuPlatformBindings openPlatformBindings(BuConfig config) {
   return WasmPlatformBindings.attach();
 }
 
-/// Loads the WASM module for [config] (injects the glue script unless the
+/// Loads the WASM module for [config] (imports the glue module unless the
 /// page already bootstrapped `BuWasm`). Web only; must be awaited before
-/// [Bu.init] when the glue was not preloaded via `<script>` tags.
+/// [Bu.init] when the glue was not pre-imported via `<script type="module">`
+/// tags.
 Future<void> ensurePlatformWasmLoaded(BuConfig config) {
   return WasmPlatformBindings.ensureLoaded(
     glueUrl: config.effectiveGlueUrl,

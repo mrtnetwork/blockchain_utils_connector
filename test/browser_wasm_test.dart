@@ -16,7 +16,7 @@ import 'unit/bytes_test.dart';
 /// (served from `test/wasm_assets/`).
 void main() {
   setUpAll(() async {
-    // Shared harness: injects the glue script (served by the dart-test
+    // Shared harness: imports the glue module (served by the dart-test
     // static handler from test/wasm_assets/), waits for bootstrap, then
     // opens the backend. No .so involved.
     // Optional overrides: pass an explicit config:

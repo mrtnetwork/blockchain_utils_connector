@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
@@ -33,28 +34,26 @@ class WasmPlatformBindings implements BuPlatformBindings {
   @override
   BuBackendKind get backendKind => BuBackendKind.wasm;
 
-  /// Injects the wasm-bindgen glue `<script>` (unless `BuWasm` is
-  /// already present), instantiates the module, and publishes it as
-  /// `globalThis.BuWasm` + `globalThis.__bu_ready`.
+  /// Loads the wasm-bindgen glue as an ES module ([importModule]),
+  /// instantiates it via its default export, and records
+  /// `globalThis.__bu_ready`. The instantiated namespace is published as
+  /// `globalThis.BuWasm` for the `BuWasmJS` bindings.
   ///
-  /// No `eval` is used (CSP `unsafe-eval`-safe): the Dart side only reads
-  /// real `globalThis` properties (`BuWasm`, `__bu_ready`, `__bu_error`).
-  /// The `wasm_bindgen` lexical binding created by the `no-modules` glue
-  /// (`let wasm_bindgen`) is captured by the companion `bu_shim.js`
-  /// (same directory as the glue), which instantiates the module and
-  /// publishes `BuWasm`/`__bu_ready`.
+  /// No `eval` is used (CSP `unsafe-eval`-safe): only a dynamic module
+  /// `import()` plus real `globalThis` reads. Requires `--target web` glue:
+  /// a `--target no-modules` classic script has no exports, so importing it
+  /// yields an empty namespace — detected here with an error telling the
+  /// caller to delete the stale assets and rebuild.
   ///
-  /// Web only. [glueUrl] defaults to `wasm_assets/bu.js` (relative to the
-  /// page, e.g. served by `dart test` from `test/wasm_assets/`). [moduleUrl]
-  /// overrides the `.wasm` location; `null` auto-locates `<glue>_bg.wasm`
-  /// next to the glue script. Pages that preload the glue (plus optionally
-  /// `bu_shim.js`, which also honors `globalThis.__bu_wasm_url`) via
-  /// `<script>` tags return immediately once `__bu_ready` is set. Throws
-  /// [StateError] on `__bu_error` or after [timeout].
-  ///
-  /// Node/worker (no DOM): script injection is impossible, so the glue +
-  /// shim must be preloaded (`import './bu.js'` / `importScripts(glueUrl)`)
-  /// with an explicit [moduleUrl]; this only waits for `BuWasm`/`__bu_ready`.
+  /// Web only (module workers included — no DOM access). [glueUrl] defaults
+  /// to `wasm_assets/bu.js` (relative to the page, e.g. served by
+  /// `dart test` from `test/wasm_assets/`). [moduleUrl] overrides the
+  /// `.wasm` location; when `null` the glue defaults to `bu_bg.wasm` next
+  /// to itself via `import.meta.url` (a pre-set `globalThis.__bu_wasm_url`
+  /// is honored as well). Pages that pre-import the glue return once the
+  /// init call below resolves — pass the same instance via [BuConfig] or
+  /// rely on the shared `__bu_ready` flag. Throws [StateError] on
+  /// `__bu_error` or after [timeout].
   static Future<void> ensureLoaded({
     String? glueUrl,
     String? moduleUrl,
@@ -77,95 +76,108 @@ class WasmPlatformBindings implements BuPlatformBindings {
       }
     }
 
-    bool hasBuWasm() => g.hasProperty('BuWasm'.toJS).toDart;
-
     if (ready()) return;
     failIfAny();
-    if (hasBuWasm()) {
-      g.setProperty('__bu_ready'.toJS, true.toJS);
-      return;
-    }
     final glue = glueUrl ?? 'wasm_assets/bu.js';
     if (moduleUrl != null) {
       g.setProperty('__bu_wasm_url'.toJS, moduleUrl.toJS);
     }
-    final hasDom = g.hasProperty('document'.toJS).toDart;
-    if (!hasDom) {
-      throw BuError(
-        DefaultErrorType.invalidState,
-        'BuWasm glue not preloaded and no DOM to inject it (Node/worker): '
-        'preload bu.js + bu_shim.js first (e.g. importScripts("$glue")) '
-        'with an explicit moduleUrl, then await ensureLoaded.',
-      );
-    }
-    void injectScript(String src, void Function()? onError) {
-      final document = g.getProperty('document'.toJS) as JSObject;
-      final script =
-          document.callMethod('createElement'.toJS, 'script'.toJS) as JSObject;
-      script.setProperty('type'.toJS, 'text/javascript'.toJS);
-      // Dynamically inserted scripts default to async: without this the
-      // small shim would execute before the large glue finishes loading.
-      // async=false preserves insertion order (glue, then shim).
-      script.setProperty('async'.toJS, false.toJS);
-      script.setProperty('src'.toJS, src.toJS);
-      if (onError != null) {
-        script.setProperty(
-          'onerror'.toJS,
-          ((JSAny _) {
-            onError();
-          }).toJS,
-        );
+    if (g.hasProperty('__bu_loading'.toJS).toDart) {
+      // A concurrent ensureLoaded is already bootstrapping; wait for it.
+      final deadline = DateTime.now().add(timeout);
+      while (!ready()) {
+        failIfAny();
+        if (DateTime.now().isAfter(deadline)) {
+          throw BuError(
+            DefaultErrorType.invalidState,
+            'Timed out waiting for the concurrent BuWasm bootstrap.',
+          );
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
       }
-      (document.getProperty('head'.toJS) as JSObject).callMethod(
-        'appendChild'.toJS,
-        script,
-      );
+      return;
     }
+    g.setProperty('__bu_loading'.toJS, true.toJS);
+    // Fresh bootstrap attempt: drop any stale error from an earlier run
+    // on this page so failIfAny only sees this attempt's outcome.
+    g.setProperty('__bu_error'.toJS, null);
+    try {
+      final deadline = DateTime.now().add(timeout);
+      Duration remaining() {
+        final r = deadline.difference(DateTime.now());
+        return r.isNegative ? Duration.zero : r;
+      }
 
-    // Companion shim publishes BuWasm/__bu_ready (external script: no eval,
-    // no inline code, CSP-safe). Derived from the glue URL unless the page
-    // already provides it.
-    String shimUrlFor(String glueSrc) {
-      final idx = glueSrc.lastIndexOf('/');
-      final dir = idx < 0 ? '' : glueSrc.substring(0, idx + 1);
-      return '${dir}bu_shim.js';
-    }
-
-    if (!g.hasProperty('__bu_shim_loading'.toJS).toDart) {
-      g.setProperty('__bu_shim_loading'.toJS, true.toJS);
-      // Fresh bootstrap attempt: drop any stale error from an earlier run
-      // on this page so failIfAny only sees this attempt's outcome.
-      g.setProperty('__bu_error'.toJS, null);
-      injectScript(glue, () {
-        g.setProperty(
-          '__bu_error'.toJS,
-          'failed to load glue script $glue'.toJS,
+      // Dynamic ES-module import (works with or without a DOM). Requires
+      // `--target web` glue: a `--target no-modules` classic script has no
+      // exports, so it imports to an empty namespace — detected below.
+      final JSObject ns;
+      try {
+        ns = await importModule(glue.toJS).toDart.timeout(
+          remaining(),
+          onTimeout: () => throw TimeoutException('import $glue timed out.'),
         );
-      });
-      final shim = shimUrlFor(glue);
-      injectScript(shim, () {
-        g.setProperty(
-          '__bu_error'.toJS,
-          'failed to load BuWasm shim $shim (host bu_shim.js next to bu.js)'
-              .toJS,
-        );
-      });
-    }
-    final deadline = DateTime.now().add(timeout);
-    // Wait for the shim (`BuWasm` global / `__bu_ready`), not the glue's
-    // lexical `wasm_bindgen` binding.
-    while (!ready() && !hasBuWasm()) {
-      failIfAny();
-      if (DateTime.now().isAfter(deadline)) {
+      } catch (e) {
         throw BuError(
           DefaultErrorType.invalidState,
-          'Timed out waiting for BuWasm ($glue + bu_shim.js).',
+          'failed to import BuWasm glue $glue: $e',
         );
       }
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      // Publish the namespace as the `BuWasm` global the bindings use.
+      g.setProperty('BuWasm'.toJS, ns);
+      final init = ns.getProperty('default'.toJS);
+      if (init is! JSFunction) {
+        throw BuError(
+          DefaultErrorType.invalidState,
+          'glue $glue has no default export (looks like `--target '
+          'no-modules`): delete test/wasm_assets/bu.js + bu_bg.wasm and '
+          'rebuild with `dart tool/build_backends.dart --wasm` '
+          '(`--target web`).',
+        );
+      }
+      // Explicit URL wins; otherwise the `web`-target glue defaults to
+      // `bu_bg.wasm` next to itself via `import.meta.url`.
+      final wasmUrl =
+          moduleUrl ??
+          (g.getProperty('__bu_wasm_url'.toJS) as JSString?)?.toDart;
+      final JSAny? started;
+      try {
+        started = wasmUrl == null
+            ? init.callAsFunction()
+            : init.callAsFunction(wasmUrl.toJS);
+      } catch (e) {
+        throw BuError(
+          DefaultErrorType.invalidState,
+          'BuWasm init call failed: $e',
+        );
+      }
+      if (started is JSPromise) {
+        try {
+          await started.toDart.timeout(
+            remaining(),
+            onTimeout: () => throw TimeoutException('BuWasm init timed out.'),
+          );
+        } catch (e) {
+          throw BuError(
+            DefaultErrorType.invalidState,
+            'BuWasm init failed: $e',
+          );
+        }
+      }
+      failIfAny();
+      g.setProperty('__bu_ready'.toJS, true.toJS);
+    } catch (e) {
+      // Publish the failure for concurrent waiters (failIfAny) — then
+      // rethrow the original error to this caller.
+      if (failure() == null) {
+        try {
+          g.setProperty('__bu_error'.toJS, '$e'.toJS);
+        } catch (_) {}
+      }
+      rethrow;
+    } finally {
+      g.setProperty('__bu_loading'.toJS, false.toJS);
     }
-    failIfAny();
-    g.setProperty('__bu_ready'.toJS, true.toJS);
   }
 
   // ---- Hash ----
