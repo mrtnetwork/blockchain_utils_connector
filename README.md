@@ -100,13 +100,17 @@ Features include `groth16`, `zcashSapling`, `zcashOrchard`, `monero`, `hw`,
 
 ```sh
 dart tool/build_backends.dart --ffi [--profile debug|release]
+  [--features hw] [--no-default-features]
 dart tool/build_backends.dart --wasm [--profile release] [--force]
 dart tool/build_backends.dart --all
 ```
 
 - `--ffi` cargo-builds the shared library used by VM tests.
+- `--features` / `--no-default-features` select the FFI cargo features
+  (default `hw` + crate defaults; any combination still loads — optional
+  domains report `unsupported`, see `test/ffi_load_test.dart`).
 - `--wasm` builds the WASM module + `wasm-bindgen --target web` glue
-  glue into `test/wasm_assets/` (`bu.js` + `bu_bg.wasm`).
+  into `test/wasm_assets/` (`bu.js` + `bu_bg.wasm`).
 - `--force` rebuilds WASM assets even when they already exist.
 
 The Rust checkout resolves via `BU_RUST_CRATE`, else a managed
@@ -131,6 +135,8 @@ Environment variables (see `test/test_backend.dart`):
 | `BU_BACKEND` | `ffi` (`rust`/`native` aliases) or `wasm` (`web`/`browser`/`chrome` aliases) | `ffi` |
 | `BU_LIB_PATH` | explicit FFI library path | auto-resolved under the Rust crate target dir |
 | `BU_FFI_PROFILE` | cargo profile used to resolve/build the FFI lib | `release` |
+| `BU_FFI_FEATURES` | cargo features for FFI builds (combined with crate defaults) | `hw` |
+| `BU_FFI_NO_DEFAULT_FEATURES` | `1` = pass `--no-default-features` to the FFI cargo build | off |
 | `BU_BUILD` | `1`/`ffi`/`wasm`/`all` — build the backend with cargo when missing | off |
 | `BU_RUST_CRATE` | Rust checkout location | `<package>/build/rust-crate` (downloaded on demand) |
 | `CARGO_TARGET_DIR` | cargo target dir override | `<crate>/target` |
@@ -140,6 +146,16 @@ Environment variables (see `test/test_backend.dart`):
 
 Notes:
 
+- `test/ffi_load_test.dart` (VM) locks the loading contract: whatever the
+  lib was built with, `Bu.init` + `backendInfo` + core hash work and every
+  optional domain fails closed (`BuError`, never a crash). Run it against a
+  reduced build to prove any feature set loads:
+  ```sh
+  dart tool/build_backends.dart --ffi --profile=debug \
+    --features=ffi --no-default-features
+  BU_LIB_PATH=$PWD/build/rust-crate/target/debug/libblockchain_utils.so \
+  BU_FFI_PROFILE=debug dart test test/ffi_load_test.dart
+  ```
 - `test/parity_test.dart` (VM) asserts every Rust FFI export has a
   wasm-bindgen twin (or is on the documented exclusion list).
 - `test/emu_live_test.dart` needs `BU_EMU_LIVE=1` plus reachable

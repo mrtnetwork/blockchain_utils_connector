@@ -203,16 +203,22 @@ const ffiBuildFeatures = 'hw';
 /// Returns the FFI library path, building it with cargo when missing and
 /// [buildMissing] is true (downloading the Rust crate from
 /// [kOfficialRustRepo] first when the checkout is missing and
-/// [cloneIfMissing] is true).
+/// [cloneIfMissing] is true). [features] overrides [ffiBuildFeatures];
+/// [noDefaultFeatures] passes `--no-default-features` (reduced builds still
+/// load: optional domains report `unsupported`, core stays mandatory).
+/// [force] rebuilds even when the library already exists.
 /// Throws [StateError] when missing and no build.
 Future<String> ensureFfiLibrary({
   String? explicitPath,
   String profile = 'release',
   bool buildMissing = false,
   bool cloneIfMissing = true,
+  String? features,
+  bool noDefaultFeatures = false,
+  bool force = false,
 }) async {
   final path = explicitPath ?? defaultFfiLibraryPath(profile: profile);
-  if (File(path).existsSync()) return path;
+  if (File(path).existsSync() && !force) return path;
   if (!buildMissing) {
     throw StateError(
       'FFI library missing: $path. Re-run with BU_BUILD=ffi (or '
@@ -226,8 +232,9 @@ Future<String> ensureFfiLibrary({
   await _run('cargo', [
     'build',
     if (profile == 'release') '--release',
+    if (noDefaultFeatures) '--no-default-features',
     '--features',
-    ffiBuildFeatures,
+    features ?? ffiBuildFeatures,
     '--manifest-path',
     '$crate/Cargo.toml',
   ], cwd: crate);

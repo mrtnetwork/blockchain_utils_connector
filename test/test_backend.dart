@@ -18,6 +18,11 @@
 ///   default) and `CARGO_TARGET_DIR`.
 /// - `BU_BUILD=1|ffi|wasm|all` — build the backend with cargo when the
 ///   artifact is missing (VM only; same as calling `tool/build_backends.dart`).
+/// - `BU_FFI_FEATURES` — cargo features for FFI builds (default `hw`,
+///   combined with the crate defaults unless `BU_FFI_NO_DEFAULT_FEATURES=1`).
+/// - `BU_FFI_NO_DEFAULT_FEATURES=1` — pass `--no-default-features` to the
+///   FFI cargo build (reduced builds still load: optional domains report
+///   `unsupported`, core stays mandatory).
 /// - `BU_WASM_GLUE_URL` — glue script URL (default `wasm_assets/bu.js`).
 /// - `BU_WASM_MODULE_URL` — `.wasm` module URL (default: auto-located next
 ///   to the glue script).
@@ -71,6 +76,8 @@ class BuTestConfig {
     this.ffiLibraryPath,
     this.ffiProfile = 'release',
     this.buildMissing = false,
+    this.ffiFeatures = 'hw',
+    this.ffiNoDefaultFeatures = false,
     this.wasmGlueUrl = 'wasm_assets/bu.js',
     this.wasmModuleUrl,
   });
@@ -81,6 +88,8 @@ class BuTestConfig {
     String? ffiLibraryPath,
     String? ffiProfile,
     bool? buildMissing,
+    String? ffiFeatures,
+    bool? ffiNoDefaultFeatures,
     String? wasmGlueUrl,
     String? wasmModuleUrl,
   }) {
@@ -97,6 +106,11 @@ class BuTestConfig {
               (build ?? '')
                   .split(',')
                   .any((p) => p.trim() == 'ffi' || p.trim() == 'all')),
+      ffiFeatures:
+          ffiFeatures ?? test_env.testEnvVar('BU_FFI_FEATURES') ?? 'hw',
+      ffiNoDefaultFeatures:
+          ffiNoDefaultFeatures ??
+          (test_env.testEnvVar('BU_FFI_NO_DEFAULT_FEATURES') == '1'),
       wasmGlueUrl:
           wasmGlueUrl ??
           test_env.testEnvVar('BU_WASM_GLUE_URL') ??
@@ -116,6 +130,14 @@ class BuTestConfig {
 
   /// Build the backend with cargo when the artifact is missing (VM only).
   final bool buildMissing;
+
+  /// Cargo features for FFI builds (`hw` default; combined with the crate
+  /// defaults unless [ffiNoDefaultFeatures]). Any combination still loads:
+  /// optional domains report `unsupported`, core stays mandatory.
+  final String ffiFeatures;
+
+  /// Pass `--no-default-features` to the FFI cargo build (VM only).
+  final bool ffiNoDefaultFeatures;
 
   /// wasm-bindgen glue script URL (browser only).
   final String wasmGlueUrl;

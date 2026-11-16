@@ -2,6 +2,7 @@
 ///
 /// ```sh
 /// dart tool/build_backends.dart --ffi [--profile debug|release]
+///   [--features hw] [--no-default-features]
 /// dart tool/build_backends.dart --wasm [--profile release] [--force]
 /// dart tool/build_backends.dart --all [--profile release] [--force]
 /// ```
@@ -11,6 +12,8 @@
 /// `https://github.com/mrtnetwork/blockchain-utils` on demand
 /// (unless `--no-clone`).
 /// WASM assets land in `test/wasm_assets/` (served by `dart test -p chrome`).
+/// Any FFI feature combination still loads: optional domains report
+/// `unsupported`, core stays mandatory (see `test/ffi_load_test.dart`).
 library;
 
 import 'dart:io' show exit, stderr, stdout;
@@ -28,8 +31,12 @@ Targets (at least one required):
 
 Options:
   --profile=<debug|release>  cargo profile (default: release).
-  --force                    rebuild WASM assets even when bu.js and
-                             bu_bg.wasm already exist.
+  --features=<list>        cargo features for the FFI build (default: hw,
+                           combined with the crate defaults).
+  --no-default-features    pass --no-default-features to the FFI cargo build
+                           (reduced builds still load: optional domains
+                           report `unsupported`).
+  --force                    rebuild even when the outputs already exist.
   --no-clone                 never clone the Rust crate; fail when the
                              checkout is missing.
   -h, --help                 print this usage.
@@ -39,6 +46,8 @@ Future<void> main(List<String> args) async {
   var ffi = false;
   var wasm = false;
   var profile = 'release';
+  var features = 'hw';
+  var noDefaultFeatures = false;
   var force = false;
   var clone = true;
   for (final arg in args) {
@@ -52,6 +61,8 @@ Future<void> main(List<String> args) async {
         wasm = true;
       case '--force':
         force = true;
+      case '--no-default-features':
+        noDefaultFeatures = true;
       case '--no-clone':
         clone = false;
       case '-h':
@@ -61,6 +72,8 @@ Future<void> main(List<String> args) async {
       default:
         if (arg.startsWith('--profile=')) {
           profile = arg.substring('--profile='.length);
+        } else if (arg.startsWith('--features=')) {
+          features = arg.substring('--features='.length);
         } else {
           stderr.writeln('Unknown argument: $arg\n$_usage');
           exit(2);
@@ -81,6 +94,9 @@ Future<void> main(List<String> args) async {
         profile: profile,
         buildMissing: true,
         cloneIfMissing: clone,
+        features: features,
+        noDefaultFeatures: noDefaultFeatures,
+        force: force,
       );
       stdout.writeln('FFI library: $path');
     }

@@ -56,6 +56,53 @@ jobs:
       - name: Run VM tests
         run: dart test --timeout=5m
 
+  ffi-minimal:
+    name: FFI minimal features (VM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout connector
+        uses: actions/checkout@v4
+
+      - name: Checkout Rust crate
+        uses: actions/checkout@v4
+        with:
+          repository: mrtnetwork/blockchain-utils
+          path: rust-crate
+
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "rust-crate -> target"
+
+      - name: Install dependencies
+        run: dart pub get
+
+      # Reduced feature set: proves any combination still loads
+      # (optional domains report `unsupported`, core stays mandatory).
+      - name: Build minimal FFI backend
+        run: >
+          dart tool/build_backends.dart --ffi --profile=debug
+          --features=ffi --no-default-features
+
+      - name: Run load contract test
+        env:
+          BU_FFI_PROFILE: debug
+        run: dart test test/ffi_load_test.dart --timeout=5m
+
+      - name: Run finalizer suite (minimal lib)
+        env:
+          BU_FFI_PROFILE: debug
+        run: >
+          dart test test/connector_backend_test.dart
+          --plain-name "finalizer safety" --timeout=5m
+
   wasm:
     name: WASM (Chrome)
     runs-on: ubuntu-latest

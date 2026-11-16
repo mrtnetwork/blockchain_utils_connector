@@ -11,6 +11,9 @@ Future<String> ensureFfiLibrary({
   String profile = 'release',
   bool buildMissing = false,
   bool cloneIfMissing = true,
+  String? features,
+  bool noDefaultFeatures = false,
+  bool force = false,
 }) {
   throw UnsupportedError('ensureFfiLibrary needs the Dart VM.');
 }

@@ -66,6 +66,8 @@ class ConnectorTestApi {
       explicitPath: c.ffiLibraryPath,
       profile: c.ffiProfile,
       buildMissing: c.buildMissing,
+      features: c.ffiFeatures,
+      noDefaultFeatures: c.ffiNoDefaultFeatures,
     );
     _bu = Bu.init(c.toBuConfig(resolvedFfiPath: path));
     _inited = true;

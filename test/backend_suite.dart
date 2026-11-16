@@ -7,6 +7,7 @@ import 'backend/curve_test.dart';
 import 'backend/dkls23_test.dart';
 import 'backend/ff1_x25519_test.dart';
 import 'backend/frost_test.dart';
+import 'backend/finalizer_test.dart';
 import 'backend/hash_test.dart';
 import 'backend/hw_bitbox_test.dart';
 import 'backend/hw_sign_test.dart';
@@ -36,6 +37,7 @@ void runBackendSuite(Bu Function() openBu) {
   runMusig2Suite(openBu);
   runDkls23Suite(openBu);
   runFrostSuite(openBu);
+  runFinalizerSuite(openBu);
   runPqSuite(openBu);
   runFf1X25519Suite(openBu);
   runZcashHashesSuite(openBu);
