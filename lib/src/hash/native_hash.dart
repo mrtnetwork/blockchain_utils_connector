@@ -28,13 +28,17 @@ class _HashFinalizerToken {
 
 /// Token freeing a saved snapshot ([BuNativeHash.saveState]) when it is
 /// GC'd without [BuNativeHash.cleanSavedState]. Owns only the bindings, the
-/// snapshot handle, and the live-set it unregisters from — never the owner
-/// (holding the owner would pin it and the finalizer would never fire).
+/// snapshot handle, and the global live-set it unregisters from — never the
+/// owner (holding the owner would pin it and the finalizer would never fire).
 class _HashStateToken {
   _HashStateToken(this.bindings, this.state, this.live);
 
   final BuPlatformBindings bindings;
   final Object state;
+
+  /// All currently live snapshot handles, across every hash context: the
+  /// arbiter that guarantees exactly one path ever frees a handle (snapshots
+  /// are portable values — any context may restore a live one).
   final Set<Object> live;
 
   void free() {
@@ -108,10 +112,12 @@ class BuNativeHash implements BuSerializableHash, SecretState {
   final int _algo;
   bool _cleaned = false;
 
-  /// Snapshot handles minted by [saveState] and not yet freed. Guards
-  /// [restoreState]/[cleanSavedState] (and the state [Finalizer]) against
-  /// double-free and use-after-free: exactly one path ever frees a handle.
-  final Set<Object> _liveStates = {};
+  /// All currently live snapshot handles, across every hash context.
+  /// Authorization set for [restoreState]/[cleanSavedState] and the state
+  /// [Finalizer]: a handle is freed by exactly one path, while any context
+  /// may restore a live snapshot (snapshots are independent, portable
+  /// values — they outlive the context that minted them).
+  static final Set<Object> _liveStates = {};
 
   void _ensure() {
     if (_cleaned) {
@@ -165,8 +171,10 @@ class BuNativeHash implements BuSerializableHash, SecretState {
   }
 
   /// Releases the native allocation. Idempotent; detaches the [Finalizer]
-  /// so GC never double-frees. Also frees outstanding snapshots minted by
-  /// [saveState] (restoring them afterwards throws [BuError.invalidState]).
+  /// so GC never double-frees. Snapshots minted by [saveState] are
+  /// independent allocations: they stay live (and restorable) after this
+  /// returns; each is freed by its own [cleanSavedState] or, forgotten,
+  /// by the state [Finalizer].
   @override
   void clean() {
     if (_cleaned) {
@@ -178,16 +186,6 @@ class BuNativeHash implements BuSerializableHash, SecretState {
       _b.hashClean(_handle);
     } finally {
       _b.hashFree(_handle);
-      // Drain snapshots: unregistered here, so their still-attached state
-      // finalizers become no-ops when they fire later (see _HashStateToken).
-      for (final s in _liveStates.toList()) {
-        _liveStates.remove(s);
-        try {
-          _b.hashFreeState(s);
-        } catch (_) {
-          // Best-effort: already freed explicitly.
-        }
-      }
     }
   }
 
@@ -195,8 +193,9 @@ class BuNativeHash implements BuSerializableHash, SecretState {
   @override
   void dispose() => clean();
 
-  /// Snapshots the current state. The snapshot belongs to this context:
-  /// restoring it after [clean]/[cleanSavedState] throws
+  /// Snapshots the current state. Snapshots are independent, portable
+  /// values: any live context may [restoreState] them, including after the
+  /// minting context was cleaned. Restoring after [cleanSavedState] throws
   /// [BuError.invalidState] instead of touching freed native memory.
   @override
   BuHashState saveState() {
@@ -211,7 +210,7 @@ class BuNativeHash implements BuSerializableHash, SecretState {
     return saved;
   }
 
-  /// Restores a snapshot minted by [saveState] on this context.
+  /// Restores a live snapshot minted by [saveState] (any context).
   @override
   BuSerializableHash restoreState(BuHashState saved) {
     _ensure();

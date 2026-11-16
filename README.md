@@ -40,7 +40,8 @@ never reimplements primitives.
 ```yaml
 dependencies:
   blockchain_utils_connector:
-    path: ../blockchain_utils_connector
+    git:
+      url: https://github.com/mrtnetwork/blockchain_utils_connector
 ```
 
 then:

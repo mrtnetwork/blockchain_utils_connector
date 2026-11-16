@@ -109,6 +109,23 @@ void runFinalizerSuite(Bu Function() openBu) {
       }
     });
 
+    test('snapshot outlives parent clean (portable state)', () {
+      final bu = openBu();
+      final h = bu.hash.sha256().unwrapOrThrow();
+      h.update([9]);
+      final snap = h.saveState();
+      h.clean(); // parent gone; the independent snapshot stays live
+      final g = bu.hash.sha256().unwrapOrThrow();
+      try {
+        g.restoreState(snap); // must NOT throw
+        expect(g.digest().length, 32);
+        g.cleanSavedState(snap);
+        expect(() => g.restoreState(snap), throwsA(isA<BuError>()));
+      } finally {
+        g.clean();
+      }
+    });
+
     test('unzeroed secrets wiped by GC stay usable afterwards', () async {
       for (var i = 0; i < 500; i++) {
         SecretBytes.random(32); // Deliberately never zeroed.
