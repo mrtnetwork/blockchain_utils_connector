@@ -82,3 +82,4 @@ export 'src/api/ff1_api.dart';
 export 'src/api/x25519_api.dart';
 export 'src/default/default_ff1_api.dart';
 export 'src/default/default_x25519_api.dart';
+export 'src/serialization/serialization.dart';
