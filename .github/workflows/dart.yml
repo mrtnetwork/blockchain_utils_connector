@@ -1,0 +1,116 @@
+name: Dart
+
+# VM tests build the FFI backend from the official Rust crate, browser
+# tests build the WASM assets into test/wasm_assets/ first.
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+  # Rust crate checkout location (overrides the managed
+  # <package>/build/rust-crate> default; see test/test_backend_io.dart).
+  BU_RUST_CRATE: ${{ github.workspace }}/rust-crate
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ffi:
+    name: FFI (VM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout connector
+        uses: actions/checkout@v4
+
+      - name: Checkout Rust crate
+        uses: actions/checkout@v4
+        with:
+          repository: mrtnetwork/blockchain-utils
+          path: rust-crate
+
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "rust-crate -> target"
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Analyze
+        run: dart analyze
+
+      - name: Build FFI backend
+        run: dart tool/build_backends.dart --ffi
+
+      - name: Run VM tests
+        run: dart test --timeout=5m
+
+  wasm:
+    name: WASM (Chrome)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout connector
+        uses: actions/checkout@v4
+
+      - name: Checkout Rust crate
+        uses: actions/checkout@v4
+        with:
+          repository: mrtnetwork/blockchain-utils
+          path: rust-crate
+
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+
+      - name: Setup Rust (wasm32)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "rust-crate -> target"
+
+      - name: Install wasm-bindgen-cli (pinned to Cargo.toml)
+        run: |
+          BIN="${CARGO_HOME:-$HOME/.cargo}/bin/wasm-bindgen"
+          if [ -x "$BIN" ]; then "$BIN" --version; exit 0; fi
+          VER=$(sed -n 's/^wasm-bindgen = { version = "=\([0-9.]*\)".*/\1/p' \
+            "$BU_RUST_CRATE/Cargo.toml" | head -n 1)
+          if [ -z "$VER" ]; then
+            echo "cannot parse wasm-bindgen version from Cargo.toml"
+            exit 1
+          fi
+          cargo install wasm-bindgen-cli --version "$VER" --locked
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Build WASM assets into test/wasm_assets
+        # --force: always rebuild from the checked-out sources (never trust
+        # possibly-committed test/wasm_assets), then run the browser suite
+        # against that fresh build.
+        run: dart tool/build_backends.dart --wasm --force
+
+      - name: Chrome wrapper (no-sandbox)
+        run: |
+          printf '#!/bin/sh\nexec /usr/bin/google-chrome --no-sandbox "$@"\n' \
+            > /tmp/chrome-nosandbox.sh
+          chmod +x /tmp/chrome-nosandbox.sh
+
+      - name: Run browser tests
+        env:
+          CHROME_EXECUTABLE: /tmp/chrome-nosandbox.sh
+        run: dart test -p chrome test/browser_wasm_test.dart --timeout=20m

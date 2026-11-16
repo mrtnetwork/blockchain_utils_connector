@@ -1,0 +1,16 @@
+name: blockchain_utils_connector
+description: Dart connector for blockchain-utils (Rust FFI / WASM).
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.7.0 <4.0.0'
+
+dependencies:
+  # path / platform loading
+  # (dart:ffi only — no package:ffi; see io_alloc.dart)
+  # web is optional — IO path does not need it
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^4.0.0
