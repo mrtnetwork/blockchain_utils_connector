@@ -71,9 +71,6 @@ enum DefaultErrorType implements BuErrorType {
 
   @override
   bool isValid(int? tag) {
-    for (final t in values) {
-      if (t.id == tag) return true;
-    }
-    return false;
+    return id == tag;
   }
 }
