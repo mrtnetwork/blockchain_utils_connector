@@ -1,6 +1,6 @@
 name: blockchain_utils_connector
 description: Dart connector for blockchain-utils (Rust FFI / WASM).
-version: 0.1.0
+version: 0.1.1
 repository: https://github.com/mrtnetwork/blockchain_utils_connector
 
 environment:
