@@ -11,9 +11,7 @@ import 'package:blockchain_utils_connector/blockchain_utils_connector.dart';
 /// `target/<profile>/libblockchain_utils.so` otherwise
 /// (see `dart tool/build_backends.dart --ffi`).
 void main(List<String> args) {
-  final bu = Bu.init(
-    BuConfig(libraryPath: args.isEmpty ? null : args.single),
-  );
+  final bu = Bu.init(BuConfig(libraryPath: args.isEmpty ? null : args.single));
 
   final sha = bu.hash.sha256().unwrapOrThrow();
   sha.update([0x61, 0x62, 0x63]); // "abc"

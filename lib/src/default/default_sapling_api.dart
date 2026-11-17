@@ -59,7 +59,8 @@ class _SaplingParamsToken {
 
 class DefaultSaplingApi implements BuSaplingApi {
   DefaultSaplingApi(this._b);
-  final BuPlatformBindings _b;  static BuError _map(int rc) => BuError.fromNativeCode(switch (rc) {
+  final BuPlatformBindings _b;
+  static BuError _map(int rc) => BuError.fromNativeCode(switch (rc) {
     0 => 7, // unreachable: callers check rc != 0 first
     1 => 1,
     2 => 4,

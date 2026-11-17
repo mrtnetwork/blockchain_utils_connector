@@ -159,9 +159,10 @@ class WasmPlatformBindings implements BuPlatformBindings {
           (g.getProperty('__bu_wasm_url'.toJS) as JSString?)?.toDart;
       final JSAny? started;
       try {
-        started = wasmUrl == null
-            ? init.callAsFunction()
-            : init.callAsFunction(wasmUrl.toJS);
+        started =
+            wasmUrl == null
+                ? init.callAsFunction()
+                : init.callAsFunction(wasmUrl.toJS);
       } catch (e) {
         throw BuError(
           DefaultErrorType.invalidState,

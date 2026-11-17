@@ -297,8 +297,8 @@
     }
   ],
   "generator": "pub",
-  "generatorVersion": "3.13.5",
+  "generatorVersion": "3.14.0",
   "flutterRoot": "file:///home/mohsen/Documents/tools/flutter",
-  "flutterVersion": "3.47.6",
+  "flutterVersion": "3.50.0",
   "pubCache": "file:///home/mohsen/.pub-cache"
 }

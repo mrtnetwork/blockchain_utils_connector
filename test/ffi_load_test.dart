@@ -70,14 +70,8 @@ void main() async {
 
   group('optional domains fail closed, never crash', () {
     _graceful('rng fill', () => bu.rng.fill(length: 8));
-    _graceful(
-      'merlin open',
-      () => bu.transcripts.merlin(label: [0x01]),
-    );
-    _graceful(
-      'strobe open',
-      () => bu.transcripts.strobe(protocol: [0x02]),
-    );
+    _graceful('merlin open', () => bu.transcripts.merlin(label: [0x01]));
+    _graceful('strobe open', () => bu.transcripts.strobe(protocol: [0x02]));
     _graceful(
       'sapling params rejected without native fault',
       () => bu.sapling.setSpendParams(params: [1, 2, 3]),
